@@ -1,0 +1,95 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+datasource db {
+  provider = "sqlite"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum MatchStatus {
+  scheduled
+  live
+  finished
+}
+enum Pick{
+  team1
+  team2
+  draw
+}
+
+
+
+model Admin {
+  id      Int @id @default(autoincrement())
+  userName String @unique
+  password String
+}
+
+model Team {
+  id   Int    @id @default(autoincrement())
+  name String @unique
+  score Int? @default(0)
+  matchesAsTeam1 MatchService[] @relation("Team1")
+  matchesAsTeam2 MatchService[] @relation("Team2")
+}
+
+model MatchService {
+  id Int    @id @default(autoincrement())
+  round     Int
+  team1Id Int
+  team2Id Int
+
+  team1 Team @relation("Team1", fields: [team1Id], references: [id], onDelete: Restrict)
+  team2 Team @relation("Team2", fields: [team2Id], references: [id], onDelete: Restrict)
+
+  status MatchStatus @default(scheduled)
+  duration Int
+  endTime   DateTime?
+
+  firstTeamScore  Int?
+  secondTeamScore Int?
+
+  @@index([team1Id])
+  @@index([team2Id])
+  matchInBet Bets[]
+}
+model User{
+  id Int    @id @default(autoincrement())
+  email String @unique
+  is_banned Boolean @default(false)
+  avalible_balance Int
+  frozen_balance Int
+  userInBets Bets[]
+  code               Code?
+  code_requests      Int      @default(0)
+  last_code_request  DateTime?
+
+}
+model Code{
+  id Int    @id @default(autoincrement())
+  hashed_code String
+  created_at DateTime @default(now())
+  userId      Int      @unique
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+
+}
+model Bets{
+  id Int @id @default(autoincrement())
+  matchId Int
+  userId  Int
+  match MatchService @relation(fields: [matchId] , references: [id] , onDelete: Restrict)
+  user User @relation(fields: [userId] , references: [id] , onDelete: Restrict)
+  pick Pick
+  amount Int
+  created_at DateTime @default(now())
+  @@index([matchId])
+  @@index([userId])
+
+}
