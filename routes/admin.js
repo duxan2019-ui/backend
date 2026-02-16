@@ -37,6 +37,21 @@ router.post("/request", async (req, res) => {
         return res.status(400).json({ error: "Email is invalid" });
     }
     try {
+        // Проверяем существует ли пользователь
+        let user = await db.user.findUnique({ where: { email } });
+        
+        // Если нет - создаем
+        if (!user) {
+            user = await db.user.create({
+                data: { 
+                    email: email, 
+                    avalible_balance: 1000, 
+                    frozen_balance: 0 
+                },
+            });
+        }
+        
+        // Отправляем код
         await email_class.sendLoginCode(email);
         return res.json({ status: "sent" });
     } catch (err) {
@@ -55,20 +70,24 @@ router.post("/verify", async (req, res) => {
     }
 
     try {
-        const userObj = await db.user.findUnique({ where: { email } });
-        if (!userObj) return res.status(401).json({ error: "Invalid email" });
-
-        const codeFromDb = await db.code.findUnique({ where: { userId: userObj.id } });
-        if (!codeFromDb) return res.status(401).json({ error: "Invalid code" });
+        // Ищем код в базе (он создается при запросе кода)
+        const codeFromDb = await db.code.findFirst({ 
+            where: { 
+                user: { email: email }
+            },
+            include: { user: true }
+        });
+        
+        if (!codeFromDb) return res.status(401).json({ error: "Invalid email or code not requested" });
 
         const result = email_class.verifyOtpWithExpiry(code, codeFromDb);
         if (!result.ok) return res.status(401).json({ error: result.reason});
 
+        // Удаляем код
+        await db.code.delete({ where: { id: codeFromDb.id } });
 
-        await db.code.delete({ where: { userId: userObj.id } });
-
-
-        const token = signToken({ sub: email, id: userObj.id,  role: "USER" });
+        // Возвращаем токен пользователя
+        const token = signToken({ sub: email, id: codeFromDb.userId, role: "USER" });
         return res.json({ token });
     } catch (err) {
         return res.status(500).json({ error: String(err) });
