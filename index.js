@@ -9,6 +9,7 @@ import user from "./routes/user.js";
 import email from "./routes/email.js";
 import * as http from "node:http";
 import {Server} from "socket.io";
+import {db} from "./db.js";
 
 
 const app = express();
@@ -30,6 +31,7 @@ const io = new Server(server, {
     cors: { origin: "*" },
 });
 app.locals.io = io;
+
 io.on("connection", (socket) => {
     console.log(`Client connected:${socket.id}`);
     socket.on("auth", (userId) => {
@@ -38,6 +40,14 @@ io.on("connection", (socket) => {
         socket.data.userId = userId;
         console.log(`Socket ${socket.id} joined user:${userId}`);
     });
+    
+    // Админ устанавливает таймер и отправляет конечное время всем
+    socket.on("setAdminTimer", (endTime) => {
+        console.log(`Timer set to: ${endTime}`);
+        // Отправляем конечное время всем клиентам, они сами считают локально
+        io.emit("timerStarted", endTime);
+    });
+    
     socket.on("disconnect", () => {
         console.log(`Client disconnected:${socket.id}`);
     })
