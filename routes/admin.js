@@ -64,9 +64,13 @@ router.post("/verify", async (req, res) => {
         const result = email_class.verifyOtpWithExpiry(code, codeFromDb);
         if (!result.ok) return res.status(401).json({ error: result.reason});
 
+        // Обновляем is_verified флаг
+        await db.user.update({
+            where: { id: userObj.id },
+            data: { is_verified: true }
+        });
 
         await db.code.delete({ where: { userId: userObj.id } });
-
 
         const token = signToken({ sub: email, id: userObj.id,  role: "USER" });
         return res.json({ token });
