@@ -16,6 +16,14 @@ router.get('/', async (req_, res) => {
     res.json(await db.matchService.findMany({orderBy: {id:"asc"}}));
 })
 
+//GET /api/match/live
+router.get('/live', async (req, res) => {
+    const liveMatch = await db.matchService.findFirst({
+        where: { status: "live" }
+    });
+    res.json(liveMatch || null);
+})
+
 //POST /api/match
 router.post('/',requireAdmin ,  async (req, res) => {
     const toInt = (v) => {
