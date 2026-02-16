@@ -19,11 +19,7 @@ router.get('/', async (req_, res) => {
 //GET /api/match/live
 router.get('/live', async (req, res) => {
     const liveMatch = await db.matchService.findFirst({
-        where: { status: "live" },
-        include: {
-            team1: { select: { name: true } },
-            team2: { select: { name: true } }
-        }
+        where: { status: "live" }
     });
     res.json(liveMatch || null);
 })
