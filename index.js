@@ -32,8 +32,21 @@ const io = new Server(server, {
 });
 app.locals.io = io;
 
+let currentAdminTimer = null; // Сохраняем текущий таймер админа
+
+// Эндпоинт для получения текущего таймера при загрузке страницы
+app.get("/api/admin-timer", (req, res) => {
+    res.json({ timerEndTime: currentAdminTimer });
+});
+
 io.on("connection", (socket) => {
     console.log(`Client connected:${socket.id}`);
+    
+    // Отправляем текущий таймер новому подключению
+    if (currentAdminTimer) {
+        socket.emit("timerStarted", currentAdminTimer);
+    }
+    
     socket.on("auth", (userId) => {
         if (!userId) return;
         socket.join(`user:${userId}`);
@@ -43,6 +56,7 @@ io.on("connection", (socket) => {
     
     // Админ устанавливает таймер и отправляет конечное время всем
     socket.on("setAdminTimer", (endTime) => {
+        currentAdminTimer = endTime;
         console.log(`Timer set to: ${endTime}`);
         // Отправляем конечное время всем клиентам, они сами считают локально
         io.emit("timerStarted", endTime);
