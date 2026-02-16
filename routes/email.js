@@ -138,8 +138,8 @@ export async function sendLoginCode(emailRaw) {
     }
 }
 export function is_correct_Email(email) {
-    if (typeof email !== "string") return false;
-    return email.trim().toLowerCase().endsWith("@htlstp.at");
+  const re = /^[A-Za-z]+\.[A-Za-z]+@htlstp\.at$/;
+  return re.test(String(email).trim());
 }
 function generate_secret_key() {
     return Math.floor(100000 + Math.random() * 900000);
