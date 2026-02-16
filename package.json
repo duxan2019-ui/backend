@@ -1,4 +1,9 @@
 {
+  "scripts": {
+    "prisma": "prisma",
+    "start": "node index.js",
+    "dev": "node index.js"
+  },
   "dependencies": {
     "@prisma/adapter-better-sqlite3": "^7.2.0",
     "@prisma/client": "^7.2.0",
