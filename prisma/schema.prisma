@@ -63,7 +63,6 @@ model User{
   id Int    @id @default(autoincrement())
   email String @unique
   is_banned Boolean @default(false)
-  is_verified Boolean @default(false)
   avalible_balance Int
   frozen_balance Int
   userInBets Bets[]
