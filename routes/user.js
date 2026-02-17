@@ -13,13 +13,17 @@ const router = Router();
 export default router;
 //GET
 router.get('/', async (req_, res) => {
-    res.json(await db.user.findMany({select:{
-            id:true,
-            email:true,
-            avalible_balance:true,
-            frozen_balance:true,
-            is_banned:true,
-        }},{orderBy: {id:"asc"}}));
+    res.json(await db.user.findMany({
+        where: { is_verified: true },
+        select: {
+            id: true,
+            email: true,
+            avalible_balance: true,
+            frozen_balance: true,
+            is_banned: true,
+        },
+        orderBy: { id: "asc" },
+    }));
 })
 router.get('/acc', requireLog ,async (req, res) => {
     const userID = toInt(req.user.id);

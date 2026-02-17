@@ -65,7 +65,13 @@ router.post("/verify", async (req, res) => {
         if (!result.ok) return res.status(401).json({ error: result.reason});
 
 
-        await db.code.delete({ where: { userId: userObj.id } });
+        await db.$transaction([
+            db.user.update({
+                where: { id: userObj.id },
+                data: { is_verified: true },
+            }),
+            db.code.delete({ where: { userId: userObj.id } }),
+        ]);
 
 
         const token = signToken({ sub: email, id: userObj.id,  role: "USER" });
