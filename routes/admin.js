@@ -2,10 +2,8 @@ import {Router} from 'express';
 import {db} from '../db.js';
 import * as email_class from "./email.js"
 
-import * as dotenv from "dotenv";
 import jwt from "jsonwebtoken";
 import {is_correct_Email} from "./email.js";
-dotenv.config();
 
 function signToken({ sub, role , id}) {
     if (!process.env.JWT_SECRET) {
