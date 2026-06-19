@@ -11,6 +11,20 @@ function shuffle(arr) {
     return [...arr].sort(() => Math.random() - 0.5);
 }
 
+function teamPoints(firstScore, secondScore) {
+    if (firstScore > secondScore) return { team1: 3, team2: 0 };
+    if (firstScore < secondScore) return { team1: 0, team2: 3 };
+    return { team1: 1, team2: 1 };
+}
+
+function winnerMatchesBet(firstScore, secondScore, bet) {
+    return (
+        (firstScore > secondScore && bet.pick === "team1") ||
+        (firstScore < secondScore && bet.pick === "team2") ||
+        (firstScore === secondScore && bet.pick === "draw")
+    );
+}
+
 //GET /****api****/match
 router.get('/', async (req_, res) => {
     res.json(await db.matchService.findMany({orderBy: {id:"asc"}}));
@@ -102,15 +116,25 @@ router.post('/',requireAdmin ,  async (req, res) => {
 
 
     const duplicate = await db.matchService.findFirst({
-        where:
-            {round ,
+        where: {
+            round,
             OR: [
-                {team1Id:team1Id},
-                {team2Id:team2Id},
-            ]}
+                {team1Id},
+                {team2Id},
+                {team1Id: team2Id},
+                {team2Id: team1Id},
+            ]
+        }
     });
     if(duplicate){
         return res.status(400).json({ error: "Match with this team already exists in this round" });
+    }
+    if (status === "live") {
+        const liveOther = await db.matchService.findFirst({
+            where: { status: "live" },
+            select: { id: true },
+        });
+        if (liveOther) return res.status(400).json({ error: "Only one match can be live!" });
     }
 
     try {
@@ -252,7 +276,17 @@ router.patch("/:id", requireAdmin, async (req, res) => {
             // 1) Забираем текущий матч из БД (важно для проверок)
             const current = await tx.matchService.findUnique({
                 where: { id },
-                select: { id: true, status: true, firstTeamScore: true, secondTeamScore: true , endTime:true , duration:true },
+                select: {
+                    id: true,
+                    round: true,
+                    team1Id: true,
+                    team2Id: true,
+                    status: true,
+                    firstTeamScore: true,
+                    secondTeamScore: true,
+                    endTime:true,
+                    duration:true,
+                },
             });
 
             if (!current) {
@@ -299,6 +333,8 @@ router.patch("/:id", requireAdmin, async (req, res) => {
 
             // 6) Если статус стал finished — делаем выплаты/разморозку
             let updatedUsers = [];
+            let affectedUserIds = [];
+            let teamScoresUpdated = false;
             if (data.status === "finished") {
                 const bets = await tx.bets.findMany({
                     where: { matchId: id },
@@ -306,10 +342,7 @@ router.patch("/:id", requireAdmin, async (req, res) => {
                 });
 
                 for (const bet of bets) {
-                    const win =
-                        (finalS1 > finalS2 && bet.pick === "team1") ||
-                        (finalS1 < finalS2 && bet.pick === "team2") ||
-                        (finalS1 === finalS2 && bet.pick === "draw");
+                    const win = winnerMatchesBet(finalS1, finalS2, bet);
 
                     if (win) {
                         const user = await tx.user.update({
@@ -329,12 +362,22 @@ router.patch("/:id", requireAdmin, async (req, res) => {
                         });
                         updatedUsers.push(user);
                     }
-
-                    req.app.locals.io?.to(`user:${bet.userId}`).emit("BalUpdate");
+                    affectedUserIds.push(bet.userId);
                 }
+
+                const points = teamPoints(finalS1, finalS2);
+                await tx.team.update({
+                    where: { id: current.team1Id },
+                    data: { score: { increment: points.team1 } },
+                });
+                await tx.team.update({
+                    where: { id: current.team2Id },
+                    data: { score: { increment: points.team2 } },
+                });
+                teamScoresUpdated = true;
             }
 
-            return { kind: "ok", updatedMatch, updatedUsers };
+            return { kind: "ok", updatedMatch, updatedUsers, affectedUserIds, teamScoresUpdated };
         });
 
         // Обработка "мягких" кейсов, которые вернули из транзакции
@@ -342,6 +385,12 @@ router.patch("/:id", requireAdmin, async (req, res) => {
         if (result.kind === "only_one_live") return res.status(400).json({ error: "Only one match can be live!" });
         if (result.kind === "already_finished") return res.status(409).json({ error: "Match is already finished" });
         if (result.kind === "scores_required") return res.status(400).json({ error: "Scores are required when status is finished" });
+        for (const userId of new Set(result.affectedUserIds ?? [])) {
+            req.app.locals.io?.to(`user:${userId}`).emit("BalUpdate");
+        }
+        if (result.teamScoresUpdated) {
+            req.app.locals.io?.emit("TeamUpdate");
+        }
         req.app.locals.io?.emit("scoreUpdated", result.updatedMatch);
 
 

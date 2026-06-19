@@ -1,5 +1,5 @@
 # Build stage
-FROM node:20-alpine AS builder
+FROM node:24.15-alpine AS builder
 
 WORKDIR /app
 
@@ -14,7 +14,7 @@ RUN npm ci
 RUN npm run prisma generate
 
 # Final stage
-FROM node:20-alpine
+FROM node:24.15-alpine
 
 WORKDIR /app
 

@@ -1,17 +1,20 @@
-import {json, Router} from 'express';
+import {Router} from 'express';
 import {db} from '../db.js';
 import * as email_class from "./email.js"
 
-import prismaPkg from "@prisma/client";
 import * as dotenv from "dotenv";
 import jwt from "jsonwebtoken";
 import {is_correct_Email} from "./email.js";
-const { Prisma } = prismaPkg;
 dotenv.config();
 
 function signToken({ sub, role , id}) {
+    if (!process.env.JWT_SECRET) {
+        throw new Error("JWT_SECRET is not configured");
+    }
+    const payload = { sub: String(sub), role: String(role).toUpperCase() };
+    if (id !== undefined && id !== null) payload.id = Number(id);
     return jwt.sign(
-        { sub: String(sub), id: Number(id) ,role: String(role).toUpperCase() },
+        payload,
         process.env.JWT_SECRET,
         { expiresIn: process.env.JWT_EXPIRES_IN ?? "24h" }
     );
@@ -23,10 +26,16 @@ const router = Router();
 router.post("/" , async (req, res) => {
     const username = String(req.body?.login);
     const password = String(req.body?.password);
-    if(process.env.password === password && process.env.username === username) {
+    const adminUsername = process.env.ADMIN_USERNAME ?? process.env.username;
+    const adminPassword = process.env.ADMIN_PASSWORD ?? process.env.password;
+    if (!adminUsername || !adminPassword) {
+        return res.status(500).json({ error: "Admin credentials are not configured" });
+    }
+
+    if(adminPassword === password && adminUsername === username) {
         return res.status(200).json({token : signToken({sub: "admin" , role: "admin"})})
     }else{
-        return res.status(400).json({error: "invalid credentials"})
+        return res.status(401).json({error: "invalid credentials"})
     }
 })
 
@@ -37,10 +46,13 @@ router.post("/request", async (req, res) => {
         return res.status(400).json({ error: "Email is invalid" });
     }
     try {
-        await email_class.sendLoginCode(email);
+        const result = await email_class.sendLoginCode(email);
+        if (!result.ok) {
+            return res.status(result.status ?? 500).json({ error: result.error ?? "Email was not sent" });
+        }
         return res.json({ status: "sent" });
     } catch (err) {
-        return res.status(500).json({ error: String(err) });
+        return res.status(500).json({ error: "Server error" });
     }
 });
 router.post("/verify", async (req, res) => {
@@ -57,6 +69,7 @@ router.post("/verify", async (req, res) => {
     try {
         const userObj = await db.user.findUnique({ where: { email } });
         if (!userObj) return res.status(401).json({ error: "Invalid email" });
+        if (userObj.is_banned) return res.status(403).json({ error: "User is banned" });
 
         const codeFromDb = await db.code.findUnique({ where: { userId: userObj.id } });
         if (!codeFromDb) return res.status(401).json({ error: "Invalid code" });
@@ -72,7 +85,7 @@ router.post("/verify", async (req, res) => {
         const token = signToken({ sub: email, id: userObj.id,  role: "USER" });
         return res.json({ token });
     } catch (err) {
-        return res.status(500).json({ error: String(err) });
+        return res.status(500).json({ error: "Server error" });
     }
 });
 export default router;
