@@ -1,0 +1,2 @@
+-- Legacy migration kept for databases that already recorded it.
+-- The current schema baseline is created in 20251220122148_init.

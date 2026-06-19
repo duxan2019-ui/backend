@@ -1,4 +1,4 @@
-import "dotenv/config";
+import "./env.js";
 import express from "express";
 import cors from "cors";
 import teams from "./routes/teams.js";
@@ -13,6 +13,7 @@ import {verifyToken} from "./middleware/requireAdmin.js";
 
 
 const app = express();
+const logSocketEvents = process.env.LOG_SOCKET_EVENTS === "true";
 
 const defaultOrigins = [
     "http://localhost:4200",
@@ -69,7 +70,7 @@ io.use((socket, next) => {
 });
 
 io.on("connection", (socket) => {
-    console.log(`Client connected:${socket.id}`);
+    if (logSocketEvents) console.log(`Client connected:${socket.id}`);
     
     // Отправляем текущий таймер новому подключению
     if (currentAdminTimer) {
@@ -81,7 +82,7 @@ io.on("connection", (socket) => {
         if (!user || user.role !== "USER" || !Number.isInteger(user.id)) return;
         socket.join(`user:${user.id}`);
         socket.data.userId = user.id;
-        console.log(`Socket ${socket.id} joined user:${user.id}`);
+        if (logSocketEvents) console.log(`Socket ${socket.id} joined user:${user.id}`);
     });
     
     // Админ устанавливает таймер и отправляет конечное время всем
@@ -102,7 +103,7 @@ io.on("connection", (socket) => {
     });
     
     socket.on("disconnect", () => {
-        console.log(`Client disconnected:${socket.id}`);
+        if (logSocketEvents) console.log(`Client disconnected:${socket.id}`);
     })
 })
 
@@ -111,4 +112,5 @@ io.on("connection", (socket) => {
 
 
 const port = Number(process.env.PORT ?? 3000);
-server.listen(port,'0.0.0.0', () => console.log(`API: http://localhost:${port}`));
+const host = process.env.HOST ?? "0.0.0.0";
+server.listen(port, host, () => console.log(`API listening on ${host}:${port}`));

@@ -1,4 +1,4 @@
-import "dotenv/config";
+import "./env.js";
 import prismaPkg from "@prisma/client";
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
 
