@@ -64,12 +64,14 @@ model User{
   email String @unique
   is_banned Boolean @default(false)
   is_verified Boolean @default(false)
-  avalible_balance Int
-  frozen_balance Int
+  avalible_balance Int @default(0)
+  frozen_balance Int @default(0)
   userInBets Bets[]
   code               Code?
   code_requests      Int      @default(0)
   last_code_request  DateTime?
+  @@index([is_banned])
+  @@index([is_verified])
 
 }
 model Code{

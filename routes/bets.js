@@ -1,4 +1,4 @@
-import {json, Router} from 'express';
+import {Router} from 'express';
 import {requireAdmin, requireLog} from "../middleware/requireAdmin.js";
 import {db} from "../db.js";
 
@@ -10,14 +10,30 @@ export const toInt = (v) => {
     return Number.isInteger(n) ? n : null;
 };
 
+async function getPublicBets(client = db) {
+    return client.bets.findMany({
+        orderBy: {id: "asc"},
+        select: {
+            matchId: true,
+            pick: true,
+            amount: true,
+        },
+    });
+}
+
 
 export default router;
 //GET
-router.get('/', async (req_, res) => {
+router.get('/', requireAdmin, async (req_, res) => {
     res.json(await db.bets.findMany({orderBy: {id:"asc"}}));
 })
+
+router.get('/public', async (req_, res) => {
+    res.json(await getPublicBets());
+});
+
 //GET
-router.get('/by/match/:id', async (req, res) => {
+router.get('/by/match/:id', requireAdmin, async (req, res) => {
     const id = Number.parseInt(req.params.id, 10);
     if (!Number.isInteger(id) || id <= 0) {
         return res.status(400).json({error: "Invalid match id"});
@@ -42,7 +58,6 @@ router.post("/",requireLog, async (req, res) => {
     const matchID = toInt(req.body?.matchId);
     const userID = toInt(req.user.id);
     const amount = toInt(req.body?.amount);
-    console.log(req.user);
     const allowedPicks = new Set(["team1", "team2", "draw"]);
     const pick = allowedPicks.has(req.body?.pick) ? req.body.pick : null;
 
@@ -60,18 +75,28 @@ router.post("/",requireLog, async (req, res) => {
     }
 
     try {
-        const match = await db.matchService.findUnique({ where: { id: matchID } });
-        if (!match) return res.status(400).json({ error: "matchId is invalid" });
-        if (match.status !== "scheduled") {
-            return res.status(400).json({ error: "Match has been already started!" });
-        }
-
         const result = await db.$transaction(async (tx) => {
-            const user = await tx.user.findUnique({ where: { id: userID } });
+            const match = await tx.matchService.findUnique({ where: { id: matchID } });
+            if (!match) throw Object.assign(new Error("matchId is invalid"), {status: 400});
+            if (match.status !== "scheduled") {
+                throw Object.assign(new Error("Match has been already started!"), {status: 400});
+            }
+
+            const user = await tx.user.findUnique({
+                where: { id: userID },
+                select: {
+                    id: true,
+                    is_banned: true,
+                    is_verified: true,
+                    avalible_balance: true,
+                },
+            });
             if (!user) throw new Error("user doesn't exist");
+            if (user.is_banned) throw Object.assign(new Error("User is banned"), {status: 403});
+            if (!user.is_verified) throw Object.assign(new Error("User is not verified"), {status: 403});
             if (user.avalible_balance < amount) throw new Error("you don't have enough money");
 
-            const change_amount = await tx.user.update({
+            await tx.user.update({
                 where: { id: userID },
                 data: {
                     avalible_balance: { decrement: amount },
@@ -84,11 +109,11 @@ router.post("/",requireLog, async (req, res) => {
             });
 
             return {bet};
-        });
-        req.app.locals.io?.emit("betsUpdate", await db.bets.findMany({orderBy: {id:"asc"}}));
+	        });
+        req.app.locals.io?.emit("betsUpdate", await getPublicBets());
         return res.status(200).json(result);
 
     } catch (err) {
-        return res.status(400).json({ error: err.message });
+        return res.status(err.status ?? 400).json({ error: err.message });
     }
 });

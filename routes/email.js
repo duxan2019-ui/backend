@@ -1,11 +1,10 @@
-import express, {Router} from "express";
+import {Router} from "express";
 import {db} from "../db.js";
 import * as crypto from "crypto"
 
 const router = Router();
 export default router;
 
-const app = express();
 function loginCodeEmailHtml(code, minutes = 10, appName = "Scoro") {
     return `<!doctype html>
 <html lang="de">
@@ -73,15 +72,16 @@ export async function sendLoginCode(emailRaw) {
         return { ok: false, status: 400, error: "Email is invalid" };
     }
 
-    const code = generate_secret_key(); // строка/число
+    const code = generate_secret_key();
     const html = loginCodeEmailHtml(code);
 
     try {
         const result = await db.$transaction(async (tx) => {
-            const user = await tx.user.upsert({
-                where: { email },
-                update: {},
-                create: { email, avalible_balance: 1000, frozen_balance: 0 },
+            const existingUser = await tx.user.findUnique({ where: { email } });
+            if (existingUser?.is_banned) return { kind: "banned" };
+
+            const user = existingUser ?? await tx.user.create({
+                data: { email, avalible_balance: 1000, frozen_balance: 0 },
             });
 
             const codeObj = await tx.code.findUnique({ where: { userId: user.id } });
@@ -91,15 +91,27 @@ export async function sendLoginCode(emailRaw) {
                 if (!canSendAgain) return { kind: "wait" };
             }
 
+            const hashed_code = hashOtp(code);
             await tx.code.upsert({
                 where: { userId: user.id },
-                update: { hashed_code: hashOtp(code), created_at: new Date() },
-                create: { userId: user.id, hashed_code: hashOtp(code) },
+                update: { hashed_code, created_at: new Date() },
+                create: { userId: user.id, hashed_code },
             });
 
-            return { kind: "ok" };
+            await tx.user.update({
+                where: { id: user.id },
+                data: {
+                    code_requests: { increment: 1 },
+                    last_code_request: new Date(),
+                },
+            });
+
+            return { kind: "ok", userId: user.id };
         });
 
+        if (result.kind === "banned") {
+            return { ok: false, status: 403, error: "User is banned" };
+        }
         if (result.kind === "wait") {
             return { ok: false, status: 429, error: "Try again later" };
         }
@@ -129,6 +141,7 @@ export async function sendLoginCode(emailRaw) {
         const success = Boolean(payload?.success);
 
         if (!response.ok || !success) {
+            await db.code.deleteMany({ where: { userId: result.userId } });
             return { ok: false, status: 400, error: "Email was not sent" };
         }
 
@@ -142,18 +155,22 @@ export function is_correct_Email(email) {
   return re.test(String(email).trim());
 }
 function generate_secret_key() {
-    return Math.floor(100000 + Math.random() * 900000);
+    return crypto.randomInt(100000, 1000000);
 }
 function hashOtp(code) {
+    if (!process.env.OTP_SECRET) {
+        throw new Error("OTP_SECRET is not configured");
+    }
     return crypto.createHmac("sha256", process.env.OTP_SECRET).update(String(code)).digest("hex");
 }
 export function verifyOtpWithExpiry(codeFromUser, codeObj, ttlMinutes = 10) {
     if (!codeObj?.hashed_code || !codeObj?.created_at) return { ok: false, reason: "NO_CODE" };
     const expiresAt = new Date(codeObj.created_at.getTime() + ttlMinutes * 60 * 1000);
     if (expiresAt <= new Date()) return { ok: false, reason: "EXPIRED" };
-    const ok = hashOtp(codeFromUser) === codeObj.hashed_code;
+    const expected = Buffer.from(codeObj.hashed_code, "hex");
+    const actual = Buffer.from(hashOtp(codeFromUser), "hex");
+    const ok = expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
     if (!ok) return { ok: false, reason: "WRONG" };
     return { ok: true };
 }
-
 

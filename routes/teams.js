@@ -34,7 +34,7 @@ router.post('/',requireAdmin, async (req, res) => {
 //DEl /api/teams/delete-by-id/:id
 router.delete('/delete-by-id/:id', requireAdmin, async (req, res) => {
     const id = req.params?.id;
-    if(!id || isNaN(Number(id)) || Number(id) < 0) return res.status(400).json({error: "Id is invalid"});
+    if(!id || isNaN(Number(id)) || Number(id) <= 0) return res.status(400).json({error: "Id is invalid"});
     try{
         const parsedId = Number(id);
         const existingTeam = await db.team.findUnique({
@@ -55,6 +55,7 @@ router.delete('/delete-by-id/:id', requireAdmin, async (req, res) => {
         const del = await db.team.delete({
             where: {id: parsedId},
         })
+        req.app.locals.io?.emit("TeamUpdate");
         return res.status(200).json(del);
 
     }catch(err){
@@ -69,7 +70,7 @@ router.put("/by-name/:name/score", requireAdmin, async (req, res) => {
     const name = String(req.params.name).trim().toUpperCase();
     const score = req.body?.score;
     if(!name) return res.status(400).json({error: "Name is required"});
-    if(!Number.isInteger(score)) {
+    if(!Number.isInteger(score) || score < 0) {
         return res.status(400).json({error: "Score must be an integer >=0"});
     }
     const teamObj = await db.team.findUnique({
@@ -84,9 +85,11 @@ router.put("/by-name/:name/score", requireAdmin, async (req, res) => {
             where: {name},
             data: {score: act_score},
         })
-        return res.status(201).json(updated)
+        req.app.locals.io?.emit("TeamUpdate");
+        return res.status(200).json(updated)
     }catch(err){
         console.error(err);
+        return res.status(500).json({error: "Server error"});
     }
 })
 export default router;
